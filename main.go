@@ -85,6 +85,7 @@ func main() {
 // top level = version, eof, obj,xref,trailer,startxref
 var versionRegexp = regexp.MustCompile(`^%PDF-(.+)$`)
 var eofRegexp = regexp.MustCompile(`^%%EOF$`)
+var commentRegexp = regexp.MustCompile(`^%.+$`)
 var objStartRegexp = regexp.MustCompile(`^(\d+) (\d+) obj$`)
 var objEndRegexp = regexp.MustCompile(`^endobj$`)
 var directoryStartRegexp = regexp.MustCompile(`^<<.*$`)
@@ -108,8 +109,13 @@ func parsePDF(fname string) (PDF, error) {
 	var pdf PDF
 
 	isInObj, isInxref, isIntrailer := false, false, false
-	var objLines []string
-	c := make(chan Object)
+
+	coo := make(chan Object)
+	clo := make(chan string)
+	cxx := make(chan Xref)
+	clx := make(chan string)
+	ctt := make(chan Trailer)
+	clt := make(chan string)
 
 	s := bufio.NewScanner(file)
 	for s.Scan() {
@@ -130,23 +136,80 @@ func parsePDF(fname string) (PDF, error) {
 			break
 		}
 
+		//コメント行
+		if commentRegexp.MatchString(l) {
+			continue
+		}
+
+		//endobj
 		if objEndRegexp.MatchString(l) {
 			isInObj = false
-			go parseObj(objLines, c)
+			clo <- l
+			pdf.Objs = append(pdf.Objs, <-cooo)
+			continue
+		}
+
+		if isInObj {
+			clo <- l
+			continue
 		}
 
 		// 6 0 obj
 		if objStartRegexp.MatchString(l) {
 			isInObj = true
+			go parseObj(coo, clo)
+			clo <- l
+			continue
 		}
 
-		if isInObj {
-			objLines = append(objLines, l)
+		if xrefSubRegexp.MatchString(l) {
+			//todo: implement
+			continue
 		}
 
+		if isInxref {
+			clx <- l
+			continue
+		}
+
+		if xrefStartRegexp.MatchString(l) {
+			isInxref = true
+			go parseXref(cxx, clx)
+			clx <- l
+			continue
+		}
+
+		if isIntrailer {
+			clt <- l
+			continue
+		}
+
+		if trailerRegexp.MatchString(l) {
+			isInxref = false
+			isIntrailer = true
+			go parseTrailer(ctt, clt)
+			clt <- l
+			continue
+		}
+
+		if startxrefRegexp.MatchString(l) {
+			isIntrailer = false
+			//todo: implement
+			continue
+		}
+
+		log.Println("Unknown line.")
 	}
 }
 
-func parseObj(objLines []string, c chan Object) {
+func parseObj(co chan<- Object, cl <-chan string) {
+
+}
+
+func parseXref(cx chan<- Xref, cl <-chan string) {
+
+}
+
+func parseTrailer(ct chan<- Trailer, cl <-chan string) {
 
 }
